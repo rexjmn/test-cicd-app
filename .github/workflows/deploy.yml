@@ -1,0 +1,51 @@
+name: Deploy to Contabo
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+
+    - name: Deploy to Server
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.SSH_HOST }}
+        username: ${{ secrets.SSH_USERNAME }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        script: |
+          # Navegar al directorio
+          cd ~/test-cicd-app
+
+          # Actualizar código
+          git pull origin main
+
+          # Backend: instalar dependencias y reiniciar
+          cd backend
+          npm install --production
+          pm2 delete test-backend || true
+          pm2 start ecosystem.config.js
+          pm2 save
+
+          # Frontend: build y copiar a nginx
+          cd ../frontend
+          npm install
+          npm run build
+          sudo rm -rf /var/www/test-app
+          sudo mkdir -p /var/www/test-app
+          sudo cp -r dist/* /var/www/test-app/
+          sudo chown -R www-data:www-data /var/www/test-app
+
+          # Reiniciar nginx
+          sudo systemctl reload nginx
